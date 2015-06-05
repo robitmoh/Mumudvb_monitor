@@ -1,0 +1,144 @@
+#!/usr/bin/perl
+# -*- perl -*-
+
+=head1 NAME
+
+mumudvb - Plugin to monitor the frontend mumudvb
+
+
+=head1 CONFIGURATION
+
+The following environment variables are used by this plugin:
+
+=over 4
+
+=item timeout
+
+Connection timeout
+
+=item url
+
+Override default status-url
+
+=item port
+
+HTTP port number
+
+=item user
+
+Manager username
+
+=item password
+
+Manager password
+
+=back
+
+=head1 USAGE
+
+Needs access to http://localhost:8000/monitor/state.xml (or modify the address for another host). 
+
+=head1 AUTHOR
+
+Robit <robit@robitnet.hu>
+
+=head1 LICENSE
+
+GPLv2
+
+=head1 MAGIC MARKERS
+
+ #%# family=manual
+ #%# capabilities=autoconf
+
+=cut
+
+use strict;
+use Munin::Plugin;
+
+
+my $ret = undef;
+
+if(!eval "require LWP::UserAgent;") {
+    $ret = "LWP::UserAgent not found";
+}
+
+if(!eval "require XML::Simple;") {
+    $ret .= "XML::Simple not found";
+}
+
+
+my $ARGPORT = $0;     
+$ARGPORT =~ s/^.*\/mumudvb_//;
+
+my $PORT =8000;
+
+if ($ARGPORT >1000) {
+    $PORT =$ARGPORT;
+} 
+
+my $URL      = exists $ENV{'url'}      ? $ENV{'url'}      : "http://%s:%d/monitor/state.xml";
+my $HOST     = exists $ENV{'host'}     ? $ENV{'host'}     : "127.0.0.1";
+my $TIMEOUT  = exists $ENV{'timeout'}  ? $ENV{'timeout'}  : 30;
+my $url = sprintf $URL,  $HOST, $PORT;
+
+
+if(exists $ARGV[0] and $ARGV[0] eq "autoconf") {
+    if($ret) {
+	print "no ($ret)\n";
+	exit 0;
+    }
+    my $au = LWP::UserAgent->new(timeout => $TIMEOUT);
+    my $repsonse = $au->request(HTTP::Request->new('GET',$url));
+    if($repsonse->is_success and $repsonse->content =~ /<mumudvb>.*<\/mumudvb>/im) {
+	print "yes\n";
+	exit 0;
+    } else {
+	print "no (no mumudvb status)\n";
+	exit 0;
+    }
+}
+
+my $ua = LWP::UserAgent->new(timeout => $TIMEOUT);
+my $xs = new XML::Simple;
+my $response = $ua->request(HTTP::Request->new('GET',$url));
+my $xml = $xs->XMLin($response->content);
+
+if(exists $ARGV[0] and $ARGV[0] eq "config") {
+    print "graph_title Mumudvb card: ".$xml->{'card'}." type: ".$xml->{'frontend_name'}."\n";
+    print "graph_args  --logarithmic\n";
+    print "graph_vlabel Bytes\n";
+    print "graph_category video\n";
+    print "graph_order ber ts_discontinuities snr signal\n";
+    print "ber.label Ber\n";
+    print "ber.draw AREA\n";
+    print "signal.label Signal level \n";
+    print "signal.draw LINE2\n";
+    print "snr.label Snr\n";
+    print "snr.draw LINE1\n";
+    print "ts_discontinuities.label Ts discontinuities\n";
+    print "ts_discontinuities.draw LINE2\n";
+    exit 0;
+}
+
+#use Data::Dumper qw(Dumper);
+#print Dumper $xml;
+
+
+
+if($xml->{'frontend_signal'}) {
+    print "ber.value " . $xml->{'frontend_ber'} ."\n";
+    print "signal.value " . $xml->{'frontend_signal'}*0.001 ."\n";
+    print "snr.value " . $xml->{'frontend_snr'}*0.01 ."\n";
+    print "ts_discontinuities.value " . $xml->{'ts_discontinuities'} ."\n";
+    
+
+} else {
+    print "ber.value " ."U\n";
+    print "signal.value " ."U\n";
+    print "snr.value " ."U\n";
+    print "ts_discontinuities.value "."U\n";
+
+}
+
+# vim:syntax=perl
